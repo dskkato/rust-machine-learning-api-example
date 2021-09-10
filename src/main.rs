@@ -34,7 +34,7 @@ async fn main() {
         .meta_graph_def()
         .get_signature(DEFAULT_SERVING_SIGNATURE_DEF_KEY)
         .unwrap();
-    let x_info = signature.get_input("input_1").unwrap();
+    let x_info = signature.get_input("input").unwrap();
     let op_x = &graph
         .operation_by_name_required(&x_info.name().name)
         .unwrap();
@@ -87,9 +87,9 @@ async fn proc(
     // Create input variables for our addition
     let mut x = Tensor::new(&[1, 224, 224, 3]);
     for (i, (_, _, pixel)) in img.pixels().enumerate() {
-        x[3 * i] = pixel.0[0] as f32;
-        x[3 * i + 1] = pixel.0[1] as f32;
-        x[3 * i + 2] = pixel.0[2] as f32;
+        x[3 * i] = pixel.0[0];
+        x[3 * i + 1] = pixel.0[1];
+        x[3 * i + 2] = pixel.0[2];
     }
 
     // Run the graph.
