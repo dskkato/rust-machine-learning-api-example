@@ -13,8 +13,6 @@ use tensorflow::SessionRunArgs;
 use tensorflow::Tensor;
 use tensorflow::DEFAULT_SERVING_SIGNATURE_DEF_KEY;
 
-use base64;
-use image;
 use image::imageops::FilterType;
 use image::GenericImageView;
 
@@ -83,7 +81,7 @@ async fn proc(
     let op_output = &model.op_output;
 
     let img_buffer = base64::decode(&payload.img).unwrap();
-    let img = image::load_from_memory(&img_buffer.as_slice()).unwrap();
+    let img = image::load_from_memory(img_buffer.as_slice()).unwrap();
     let img = img.resize(224, 224, FilterType::Gaussian);
 
     // Create input variables for our addition
@@ -96,8 +94,8 @@ async fn proc(
 
     // Run the graph.
     let mut args = SessionRunArgs::new();
-    args.add_feed(&op_x, 0, &x);
-    let token_output = args.request_fetch(&op_output, 0);
+    args.add_feed(op_x, 0, &x);
+    let token_output = args.request_fetch(op_output, 0);
     session.run(&mut args).unwrap();
     // Check the output.
     let output: Tensor<f32> = args.fetch(token_output).unwrap();
