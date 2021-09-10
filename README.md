@@ -8,6 +8,7 @@ Used pytorch rust bindings.
 # Usage
 
 ```rust
+python create_model.py
 docker compose up -d --build
 python sample_request.py
 ```
