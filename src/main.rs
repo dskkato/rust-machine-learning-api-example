@@ -9,13 +9,14 @@ use tensorflow::eager;
 use tensorflow::Graph;
 use tensorflow::Operation;
 use tensorflow::SavedModelBundle;
+use tensorflow::Session;
 use tensorflow::SessionOptions;
 use tensorflow::SessionRunArgs;
 use tensorflow::Tensor;
 use tensorflow::DEFAULT_SERVING_SIGNATURE_DEF_KEY;
 
 struct DnnModel {
-    bundle: SavedModelBundle,
+    session: Session,
     op_x: Operation,
     op_output: Operation,
 }
@@ -42,7 +43,7 @@ async fn main() {
         .unwrap();
 
     let state = Arc::new(Mutex::new(DnnModel {
-        bundle,
+        session: bundle.session,
         op_x: op_x.clone(),
         op_output: op_output.clone(),
     }));
@@ -74,7 +75,7 @@ async fn proc(
     Extension(state): Extension<Arc<Mutex<DnnModel>>>,
 ) -> Json<Value> {
     let model = state.lock().await;
-    let session = &model.bundle.session;
+    let session = &model.session;
     let op_x = &model.op_x;
     let op_output = &model.op_output;
 
