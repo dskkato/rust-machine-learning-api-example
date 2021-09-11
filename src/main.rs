@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use tensorflow::eager;
 use tensorflow::Graph;
 use tensorflow::Operation;
 use tensorflow::SavedModelBundle;
@@ -12,9 +13,6 @@ use tensorflow::SessionOptions;
 use tensorflow::SessionRunArgs;
 use tensorflow::Tensor;
 use tensorflow::DEFAULT_SERVING_SIGNATURE_DEF_KEY;
-
-use image::imageops::FilterType;
-use image::GenericImageView;
 
 struct DnnModel {
     bundle: SavedModelBundle,
@@ -80,17 +78,15 @@ async fn proc(
     let op_x = &model.op_x;
     let op_output = &model.op_output;
 
-    let img_buffer = base64::decode(&payload.img).unwrap();
-    let img = image::load_from_memory(img_buffer.as_slice()).unwrap();
-    let img = img.resize(224, 224, FilterType::Gaussian);
+    let buf = base64::decode(&payload.img).unwrap();
 
-    // Create input variables for our addition
-    let mut x = Tensor::new(&[1, 224, 224, 3]);
-    for (i, (_, _, pixel)) in img.pixels().enumerate() {
-        x[3 * i] = pixel.0[0];
-        x[3 * i + 1] = pixel.0[1];
-        x[3 * i + 2] = pixel.0[2];
-    }
+    // Convert the buffer to a input Tensor through eager APIs (quite experimental)
+    let buf = unsafe { String::from_utf8_unchecked(buf) };
+    let buf = Tensor::from(buf);
+    let img = eager::decode_png(buf, 3, tensorflow::DataType::UInt8).unwrap();
+    let images = eager::expand_dims(img, Tensor::from(&[0])).unwrap();
+    let img = eager::resize_blinear(images, Tensor::from(&[224, 224]), false, false).unwrap();
+    let x: Tensor<f32> = img.resolve().unwrap();
 
     // Run the graph.
     let mut args = SessionRunArgs::new();

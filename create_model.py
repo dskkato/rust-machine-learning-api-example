@@ -7,7 +7,7 @@ except:
     raise
 
 # default input shape 224x224x3
-x = tf.keras.Input((224, 224, 3), name="input", dtype=tf.uint8)
+x = tf.keras.Input((224, 224, 3), name="input", dtype=tf.float32)
 model = tf.keras.applications.MobileNetV3Small(
     input_tensor=x, weights="imagenet"
 )
