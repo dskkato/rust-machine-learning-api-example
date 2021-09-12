@@ -1,19 +1,19 @@
 use axum::{extract::Extension, handler::post, AddExtensionLayer, Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::fs::File;
+use std::io::Read;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use tensorflow::eager;
 use tensorflow::Graph;
+use tensorflow::ImportGraphDefOptions;
 use tensorflow::Operation;
-use tensorflow::SavedModelBundle;
 use tensorflow::Session;
 use tensorflow::SessionOptions;
 use tensorflow::SessionRunArgs;
 use tensorflow::Tensor;
-use tensorflow::DEFAULT_SERVING_SIGNATURE_DEF_KEY;
 
 struct DnnModel {
     session: Session,
@@ -23,27 +23,24 @@ struct DnnModel {
 
 #[tokio::main]
 async fn main() {
-    // Load the saved model exported by zenn_savedmodel.py.
+    // Load the frozen_model via crate_model.py
     let mut graph = Graph::new();
-    let bundle =
-        SavedModelBundle::load(&SessionOptions::new(), &["serve"], &mut graph, "model").unwrap();
+    let mut proto = Vec::new();
+    File::open("model/model.pb")
+        .unwrap()
+        .read_to_end(&mut proto)
+        .unwrap();
+    graph
+        .import_graph_def(&proto, &ImportGraphDefOptions::new())
+        .unwrap();
+    let session = Session::new(&SessionOptions::new(), &graph).unwrap();
 
     // get in/out operations
-    let signature = bundle
-        .meta_graph_def()
-        .get_signature(DEFAULT_SERVING_SIGNATURE_DEF_KEY)
-        .unwrap();
-    let x_info = signature.get_input("input").unwrap();
-    let op_x = &graph
-        .operation_by_name_required(&x_info.name().name)
-        .unwrap();
-    let output_info = signature.get_output("Predictions").unwrap();
-    let op_output = &graph
-        .operation_by_name_required(&output_info.name().name)
-        .unwrap();
+    let op_x = &graph.operation_by_name_required("input").unwrap();
+    let op_output = &graph.operation_by_name_required("Identity").unwrap();
 
     let state = Arc::new(Mutex::new(DnnModel {
-        session: bundle.session,
+        session,
         op_x: op_x.clone(),
         op_output: op_output.clone(),
     }));
@@ -79,15 +76,8 @@ async fn proc(
     let op_x = &model.op_x;
     let op_output = &model.op_output;
 
-    let buf = base64::decode(&payload.img).unwrap();
-
-    // Convert the buffer to a input Tensor through eager APIs (quite experimental)
-    let buf = unsafe { String::from_utf8_unchecked(buf) };
-    let buf = Tensor::from(buf);
-    let img = eager::decode_png(buf, 3, tensorflow::DataType::UInt8).unwrap();
-    let images = eager::expand_dims(img, Tensor::from(&[0])).unwrap();
-    let img = eager::resize_blinear(images, Tensor::from(&[224, 224]), false, false).unwrap();
-    let x: Tensor<f32> = img.resolve().unwrap();
+    // Create input tensor
+    let x = Tensor::from(payload.img);
 
     // Run the graph.
     let mut args = SessionRunArgs::new();

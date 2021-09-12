@@ -11,8 +11,4 @@ axum = "0.2.2"
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-base64 = "0.13"
-# image = "0.23"
-# tensorflow = "0.17.0"
-tensorflow = { git = "https://github.com/dskkato/rust", rev = "2257903f697aa0c8af13f8f19aa404d238ca7195" }
-
+tensorflow = "0.17.0"
