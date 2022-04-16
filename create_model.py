@@ -18,17 +18,8 @@ model = tf.keras.applications.MobileNetV3Small(
     input_shape=[224, 224, 3], weights="imagenet"
 )
 
-
-def predict(x):
-    buf = tf.io.decode_base64(x)
-    img = tf.io.decode_png(buf, channels=3, dtype=tf.uint8)
-    img = tf.image.resize(img, (224, 224), antialias=True)
-    x = tf.expand_dims(img, 0)
-    return model(x)
-
-
-x = tf.TensorSpec(None, tf.string, name="input")
-model_fn = tf.function(predict).get_concrete_function(x)
+x = tf.TensorSpec(None, tf.float32, name="input")
+model_fn = tf.function(model).get_concrete_function(x)
 frozen_model = convert_variables_to_constants_v2(model_fn)
 
 directory = "model"

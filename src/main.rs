@@ -7,16 +7,19 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use tensorflow::Graph;
-use tensorflow::ImportGraphDefOptions;
-use tensorflow::Operation;
-use tensorflow::Session;
-use tensorflow::SessionOptions;
-use tensorflow::SessionRunArgs;
-use tensorflow::Tensor;
+use tensorflow as tf;
+use tf::eager::{self, raw_ops, ToTensorHandle};
+use tf::Graph;
+use tf::ImportGraphDefOptions;
+use tf::Operation;
+use tf::Session;
+use tf::SessionOptions;
+use tf::SessionRunArgs;
+use tf::Tensor;
 
 struct DnnModel {
     session: Session,
+    ctx: eager::Context,
     op_x: Operation,
     op_output: Operation,
 }
@@ -35,12 +38,17 @@ async fn main() {
         .unwrap();
     let session = Session::new(&SessionOptions::new(), &graph).unwrap();
 
+    // Create eager execution context
+    let opts = eager::ContextOptions::new();
+    let ctx = eager::Context::new(opts).unwrap();
+
     // get in/out operations
     let op_x = &graph.operation_by_name_required("input").unwrap();
     let op_output = &graph.operation_by_name_required("Identity").unwrap();
 
     let state = Arc::new(Mutex::new(DnnModel {
         session,
+        ctx,
         op_x: op_x.clone(),
         op_output: op_output.clone(),
     }));
@@ -73,11 +81,37 @@ async fn proc(
 ) -> Json<Value> {
     let model = state.lock().await;
     let session = &model.session;
+    let ctx = &model.ctx;
     let op_x = &model.op_x;
     let op_output = &model.op_output;
 
     // Create input tensor
-    let x = Tensor::from(payload.img);
+    let x = payload.img.to_handle(&ctx).unwrap();
+    let buf = raw_ops::decode_base64(&ctx, &x).unwrap();
+    let decode_png = raw_ops::DecodePng::new().channels(3);
+    let img = decode_png.call(&ctx, &buf).unwrap();
+    let height = img.dim(0).unwrap();
+    let width = img.dim(1).unwrap();
+    let cast2float = raw_ops::Cast::new().DstT(tf::DataType::Float);
+
+    let img = cast2float.call(&ctx, &img).unwrap();
+
+    // [0, 1]に正規化する。255.0とすると、型の不一致でエラーになる。
+    let img = raw_ops::div(&ctx, &img, &255.0f32).unwrap();
+
+    // HWC -> NHWC に変換する
+    let batch = raw_ops::expand_dims(&ctx, &img, &0).unwrap();
+    // [224, 224, 3]にリサイズする。
+    // ここではantialiasを有効にするために、v2のAPIを使う。
+    let resize_bilinear = raw_ops::ScaleAndTranslate::new()
+        .kernel_type("triangle") // bilinearのオプションに相当
+        .antialias(true);
+    let scale = [224.0 / height as f32, 224.0 / width as f32];
+    let resized = resize_bilinear
+        .call(&ctx, &batch, &[224, 224], &scale, &[0f32, 0f32])
+        .unwrap();
+    let x = resized.resolve().unwrap();
+    let x: Tensor<f32> = unsafe { x.into_tensor() };
 
     // Run the graph.
     let mut args = SessionRunArgs::new();
